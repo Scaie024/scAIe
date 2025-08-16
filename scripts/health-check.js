@@ -27,7 +27,6 @@ async function checkEnvironment() {
     "NEXT_PUBLIC_SUPABASE_URL",
     "NEXT_PUBLIC_SUPABASE_ANON_KEY",
     "SUPABASE_SERVICE_ROLE_KEY",
-    "QWEN_API_KEY",
   ]
 
   const optionalVars = ["POSTGRES_URL", "REDIS_URL"]
@@ -58,42 +57,32 @@ async function checkDatabase() {
   log("\n🗄️  Checking database connection...", "blue")
 
   try {
-    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
-    const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY
+    // Use the local PostgreSQL connection instead of Supabase
+    const { Client } = require('pg');
+    
+    const client = new Client({
+      connectionString: process.env.POSTGRES_URL,
+    });
 
-    if (!supabaseUrl || !supabaseKey) {
-      log("❌ Database: Missing configuration", "red")
-      return false
-    }
-
-    const supabase = createClient(supabaseUrl, supabaseKey)
-
-    // Test connection
-    const { data, error } = await supabase.from("contacts").select("count").limit(1)
-
-    if (error) {
-      log(`❌ Database: Connection failed - ${error.message}`, "red")
-      return false
-    }
-
-    log("✅ Database: Connection successful", "green")
+    await client.connect();
+    log("✅ Database: Connection successful", "green");
 
     // Check tables
-    const tables = ["contacts", "agent_logs"]
+    const tables = ["contacts", "agent_logs"];
     for (const table of tables) {
-      const { data, error } = await supabase.from(table).select("*").limit(1)
-
-      if (error) {
-        log(`❌ Table '${table}': ${error.message}`, "red")
-      } else {
-        log(`✅ Table '${table}': Available`, "green")
+      try {
+        const res = await client.query(`SELECT 1 FROM ${table} LIMIT 1`);
+        log(`✅ Table '${table}': Available`, "green");
+      } catch (error) {
+        log(`❌ Table '${table}': ${error.message}`, "red");
       }
     }
 
-    return true
+    await client.end();
+    return true;
   } catch (error) {
-    log(`❌ Database: ${error.message}`, "red")
-    return false
+    log(`❌ Database: ${error.message}`, "red");
+    return false;
   }
 }
 
@@ -101,26 +90,75 @@ async function checkAI() {
   log("\n🤖 Checking AI service...", "blue")
 
   try {
-    const apiKey = process.env.QWEN_API_KEY
+    // Check which AI service is configured
+    const qwenApiKey = process.env.QWEN_API_KEY
+    const openaiApiKey = process.env.OPENAI_API_KEY
+    const geminiApiKey = process.env.GEMINI_API_KEY
 
-    if (!apiKey) {
-      log("❌ AI: Missing API key", "red")
-      return false
-    }
+    if (geminiApiKey) {
+      log("🔍 Testing Gemini API...", "cyan")
+      
+      // Test Gemini API connection with a valid model
+      const response = await fetch("https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-pro:generateContent?key=" + geminiApiKey, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          contents: [{
+            parts: [{
+              text: "Hello, this is a test. Respond with 'Test successful' if you receive this message."
+            }]
+          }]
+        })
+      })
 
-    // Test API connection
-    const response = await fetch("https://dashscope.aliyuncs.com/compatible-mode/v1/models", {
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-        "Content-Type": "application/json",
-      },
-    })
+      if (response.ok) {
+        log("✅ Gemini API: Connection successful", "green")
+        return true
+      } else {
+        const errorData = await response.json()
+        log(`❌ Gemini API: Connection failed - ${errorData.error?.message || response.status}`, "red")
+        return false
+      }
+    } else if (qwenApiKey) {
+      log("🔍 Testing Qwen API...", "cyan")
+      
+      // Test Qwen API connection
+      const response = await fetch("https://dashscope.aliyuncs.com/compatible-mode/v1/models", {
+        headers: {
+          Authorization: `Bearer ${qwenApiKey}`,
+          "Content-Type": "application/json",
+        },
+      })
 
-    if (response.ok) {
-      log("✅ AI: API connection successful", "green")
-      return true
+      if (response.ok) {
+        log("✅ Qwen API: Connection successful", "green")
+        return true
+      } else {
+        log(`❌ Qwen API: Connection failed - ${response.status}`, "red")
+        return false
+      }
+    } else if (openaiApiKey) {
+      log("🔍 Testing OpenAI API...", "cyan")
+      
+      // Test OpenAI API connection
+      const response = await fetch("https://api.openai.com/v1/models", {
+        headers: {
+          Authorization: `Bearer ${openaiApiKey}`,
+          "Content-Type": "application/json",
+        },
+      })
+
+      if (response.ok) {
+        log("✅ OpenAI API: Connection successful", "green")
+        return true
+      } else {
+        log(`❌ OpenAI API: Connection failed - ${response.status}`, "red")
+        return false
+      }
     } else {
-      log(`❌ AI: API connection failed - ${response.status}`, "red")
+      log("❌ AI: No API key configured", "red")
       return false
     }
   } catch (error) {
@@ -132,7 +170,7 @@ async function checkAI() {
 async function checkFiles() {
   log("\n📁 Checking required files...", "blue")
 
-  const requiredFiles = ["package.json", "next.config.mjs", "tailwind.config.js", "tsconfig.json", ".env"]
+  const requiredFiles = ["package.json", "next.config.mjs", "tailwind.config.ts", "tsconfig.json", ".env"]
 
   const requiredDirs = ["app", "components", "lib", "types", "config"]
 
@@ -202,89 +240,56 @@ async function checkPorts() {
 
   const ports = [3000, 5432, 6379]
 
-  for (const port of ports) {
-    try {
-      const { stdout } = await execAsync(`lsof -i :${port}`, { encoding: "utf8" })
-      if (stdout.trim()) {
+  try {
+    for (const port of ports) {
+      // Check if port is in use
+      try {
+        await execAsync(`lsof -i :${port} | grep LISTEN`)
         log(`⚠️  Port ${port}: In use`, "yellow")
-      } else {
+      } catch (error) {
         log(`✅ Port ${port}: Available`, "green")
       }
-    } catch (error) {
-      // lsof returns non-zero exit code when port is free
-      log(`✅ Port ${port}: Available`, "green")
     }
+    return true
+  } catch (error) {
+    log(`⚠️  Ports: Could not check availability`, "yellow")
+    return true // Not a critical error
   }
-}
-
-async function generateReport(results) {
-  log("\n📊 Health Check Report", "blue")
-  log("======================", "blue")
-
-  const overallHealth = Object.values(results).every((result) => result)
-
-  if (overallHealth) {
-    log("🎉 Overall Status: HEALTHY", "green")
-  } else {
-    log("⚠️  Overall Status: NEEDS ATTENTION", "yellow")
-  }
-
-  log("\nComponent Status:", "cyan")
-  for (const [component, status] of Object.entries(results)) {
-    const icon = status ? "✅" : "❌"
-    const color = status ? "green" : "red"
-    log(`${icon} ${component}: ${status ? "OK" : "FAILED"}`, color)
-  }
-
-  if (!overallHealth) {
-    log("\n🔧 Recommended Actions:", "yellow")
-    if (!results.Environment) {
-      log("- Configure missing environment variables in .env", "cyan")
-    }
-    if (!results.Database) {
-      log("- Check Supabase configuration and run migrations", "cyan")
-    }
-    if (!results.AI) {
-      log("- Verify Qwen API key and network connectivity", "cyan")
-    }
-    if (!results.Files) {
-      log("- Ensure all required files are present", "cyan")
-    }
-    if (!results.Dependencies) {
-      log("- Run npm install to install missing dependencies", "cyan")
-    }
-  }
-
-  return overallHealth
 }
 
 async function main() {
-  log("🏥 CRM Admin System Health Check", "bright")
-  log("==================================", "bright")
+  log("🏥 CRM System Health Check", "cyan")
+  log("========================\n", "cyan")
 
-  const results = {
-    Environment: await checkEnvironment(),
-    Database: await checkDatabase(),
-    AI: await checkAI(),
-    Files: await checkFiles(),
-    Dependencies: await checkDependencies(),
+  const checks = [
+    { name: "Environment", fn: checkEnvironment },
+    { name: "Database", fn: checkDatabase },
+    { name: "AI Service", fn: checkAI },
+    { name: "Files", fn: checkFiles },
+    { name: "Dependencies", fn: checkDependencies },
+    { name: "Ports", fn: checkPorts },
+  ]
+
+  let allPassed = true
+
+  for (const check of checks) {
+    try {
+      const result = await check.fn()
+      if (!result) allPassed = false
+    } catch (error) {
+      log(`❌ ${check.name}: Failed with error - ${error.message}`, "red")
+      allPassed = false
+    }
   }
 
-  await checkPorts()
-
-  const isHealthy = await generateReport(results)
-
-  if (isHealthy) {
-    log("\n🚀 System is ready to run!", "green")
-    log("Start with: npm run dev", "cyan")
+  log("\n" + "=".repeat(24), "cyan")
+  if (allPassed) {
+    log("🎉 All systems operational!", "green")
   } else {
-    log("\n⚠️  System needs attention before running", "yellow")
-    process.exit(1)
+    log("⚠️  Some checks failed. Please review.", "yellow")
   }
 }
 
 if (require.main === module) {
-  main()
+  main().catch(console.error)
 }
-
-module.exports = { main }

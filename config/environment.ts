@@ -10,6 +10,7 @@ export const env = {
   ai: {
     qwenApiKey: process.env.QWEN_API_KEY || "",
     openaiApiKey: process.env.OPENAI_API_KEY || "",
+    geminiApiKey: process.env.GEMINI_API_KEY || "",
   },
 
   // Database Configuration
@@ -36,7 +37,7 @@ export const env = {
 
 // Validation functions
 export const validateEnvironment = () => {
-  const required = ["NEXT_PUBLIC_SUPABASE_URL", "NEXT_PUBLIC_SUPABASE_ANON_KEY", "QWEN_API_KEY"]
+  const required = ["NEXT_PUBLIC_SUPABASE_URL", "NEXT_PUBLIC_SUPABASE_ANON_KEY"]
 
   const missing = required.filter((key) => !process.env[key])
 

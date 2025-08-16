@@ -1,11 +1,47 @@
 # See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
 
-# dependencies
-/node_modules
+# Node.js dependencies
+node_modules/
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
 
-# next.js
-/.next/
-/out/
+# Build output
+.next/
+out/
+
+# Docker
+*.log
+*.pid
+*.sock
+*.db
+
+# IDE
+.vscode/
+.idea/
+*.iml
+*.pyc
+*.swp
+
+# Misc
+.DS_Store
+*.md
+*.log
+*.tmp
+*.bak
+*.zip
+*.tar.gz
+*.DS_Store
+
+# Database
+*.sqlite
+*.db
+
+# Environment
+.env
+.env.*
+!.env.example
 
 # production
 /build

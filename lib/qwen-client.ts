@@ -3,7 +3,7 @@ import { env } from "@/config/environment"
 
 // Create Qwen client using OpenAI-compatible interface with environment variable
 export const qwen = createOpenAI({
-  apiKey: env.ai.qwenApiKey || "sk-f1a7ffe0627f455e81dd390127722aed", // Fallback to hardcoded key
+  apiKey: env.ai.qwenApiKey, // Use only the environment variable
   baseURL: "https://dashscope.aliyuncs.com/compatible-mode/v1",
   fetch: async (url, options) => {
     const controller = new AbortController()
@@ -49,15 +49,4 @@ export const qwenModels = {
 } as const
 
 // Default model (backward compatibility)
-export const qwenModel = qwenModels.turbo.model
-
-// Model selection helper
-export const selectOptimalModel = (complexity: number, tokenCount: number) => {
-  if (complexity > 0.7 || tokenCount > 3000) {
-    return qwenModels.max
-  } else if (complexity > 0.4 || tokenCount > 1500) {
-    return qwenModels.plus
-  } else {
-    return qwenModels.turbo
-  }
-}
+export const qwenDefaultModel = qwenModels.plus.model

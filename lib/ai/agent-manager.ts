@@ -1,5 +1,7 @@
 import { streamText, generateText } from "ai"
 import { qwenModels } from "@/lib/qwen-client"
+import { openaiModels } from "@/lib/openai-client"
+import { geminiModels } from "@/lib/gemini-client"
 import { createClient } from "@/lib/supabase/client"
 import type { ChatMessage, AgentLog } from "@/types"
 import { AI_CONFIG } from "@/config/constants"
@@ -67,112 +69,126 @@ export class AgentManager {
   async processMessage(
     messages: ChatMessage[],
     context: AgentContext,
-    streaming = true,
-  ): Promise<AgentResponse | ReadableStream> {
+    streamResponse = false,
+  ): Promise<ReadableStream | AgentResponse> {
     const startTime = Date.now()
+    const modelConfig = this.selectModel(context)
+    const model = modelConfig.model
+
+    // Prepare messages for the AI model
+    const preparedMessages = messages.map((msg) => ({
+      role: msg.role,
+      content: msg.content,
+    }))
 
     try {
-      // Log interaction start
-      await this.logInteraction(context, "chat_start", { messageCount: messages.length })
-
-      // Get system prompt for agent type
-      const systemMessage = {
-        role: "system" as const,
-        content: this.getSystemPrompt(context.agentType, context),
-      }
-
-      // Prepare messages with context
-      const processedMessages = this.prepareMessages(messages, context)
-      const allMessages = [systemMessage, ...processedMessages]
-
-      // Select appropriate model based on complexity
-      const model = this.selectModel(messages, context)
-      
-      // Validate model selection
-      if (!model) {
-        throw new Error('Failed to select appropriate model')
-      }
-
-      if (streaming) {
-        const result = await this.streamWithRetry(allMessages, model, context)
-
-        // Log successful interaction
-        const processingTime = Date.now() - startTime
-        await this.logInteraction(context, "chat_success", {
-          processingTime,
-          model: model.modelId,
+      if (streamResponse) {
+        const result = await streamText({
+          model,
+          messages: preparedMessages,
+          system: this.systemPrompts[context.agentType as keyof typeof this.systemPrompts] || this.systemPrompts.general,
+          maxTokens: modelConfig.maxTokens,
+          temperature: AI_CONFIG.temperature,
         })
 
-        return result
+        return result.toAIStream()
       } else {
-        const result = await this.generateWithRetry(allMessages, model, context)
-        const processingTime = Date.now() - startTime
-
-        await this.logInteraction(context, "chat_success", {
-          processingTime,
-          model: model.modelId,
-          responseLength: result.text.length,
+        const result = await generateText({
+          model,
+          messages: preparedMessages,
+          system: this.systemPrompts[context.agentType as keyof typeof this.systemPrompts] || this.systemPrompts.general,
+          maxTokens: modelConfig.maxTokens,
+          temperature: AI_CONFIG.temperature,
         })
 
         return {
           content: result.text,
           success: true,
           agentType: context.agentType,
-          processingTime,
-          model: model.modelId,
+          processingTime: Date.now() - startTime,
+          model: modelConfig.modelId,
         }
       }
-    } catch (error) {
-      const processingTime = Date.now() - startTime
-      const errorMessage = error instanceof Error ? error.message : "Unknown error"
+    } catch (error: any) {
+      console.error("AgentManager error:", error)
 
-      await this.logInteraction(context, "chat_error", {
-        error: errorMessage,
-        processingTime,
+      // Log error to database
+      await this.logAgentInteraction({
+        agent_type: context.agentType,
+        action: "process_message",
+        channel: "web_chat",
+        success: false,
+        error: error.message,
+        processing_time_ms: Date.now() - startTime,
+        metadata: {
+          model: modelConfig.modelId,
+          messages_count: messages.length,
+        },
       })
 
-      if (streaming) {
-        return this.createErrorStream(errorMessage)
-      } else {
-        return {
-          content: "I apologize, but I'm experiencing technical difficulties. Please try again.",
-          success: false,
-          agentType: context.agentType,
-          processingTime,
-          model: "error",
-          error: errorMessage,
-        }
+      // Return error response
+      return {
+        content: `I apologize, but I encountered an error while processing your request: ${error.message}`,
+        success: false,
+        agentType: context.agentType,
+        processingTime: Date.now() - startTime,
+        model: modelConfig.modelId,
+        error: error.message,
       }
     }
   }
 
-  private getSystemPrompt(agentType: string, context: AgentContext): string {
-    const basePrompt = this.systemPrompts[agentType as keyof typeof this.systemPrompts] || this.systemPrompts.general
 
-    // Add context-specific information
-    const contextInfo = context.metadata ? `\n\nContext: ${JSON.stringify(context.metadata)}` : ""
-    return basePrompt + contextInfo
-  }
+  // Model selection with priority order
+  private selectModel(context: AgentContext) {
+    const agentType = context.agentType;
+    
+    // Try Gemini first, then Qwen, then OpenAI
+    const geminiApiKey = process.env.GEMINI_API_KEY
+    const qwenApiKey = process.env.QWEN_API_KEY
+    const openaiApiKey = process.env.OPENAI_API_KEY
 
-  private prepareMessages(messages: ChatMessage[], context: AgentContext): ChatMessage[] {
-    // Filter out system messages and limit conversation history
-    const filteredMessages = messages.filter((msg) => msg.role !== "system")
-    const recentMessages = filteredMessages.slice(-10) // Keep last 10 messages
-
-    return recentMessages.map((msg) => ({
-      role: msg.role,
-      content: msg.content,
-    }))
-  }
-
-  private selectModel(messages: ChatMessage[], context: AgentContext) {
-    // Use the model specified in the agent config if available
-    const agentConfig = Array.from(agentOrchestrator.getActiveAgentsSync?.() || []).find(
-      (agent) => agent.type === context.agentType
-    )
-
-    const modelId = agentConfig?.model || "qwen-plus"
-    return qwenModels[modelId] || qwenModels["qwen-plus"]
+    if (geminiApiKey) {
+      // Select appropriate Gemini model based on agent type
+      switch (agentType) {
+        case "sales":
+          return geminiModels["gemini-1.5-pro"]
+        case "support":
+          return geminiModels["gemini-1.5-pro"]
+        case "planning":
+          return geminiModels["gemini-1.5-pro"]
+        case "scaie":
+          return geminiModels["gemini-1.5-flash"]
+        default:
+          return geminiModels["gemini-1.5-flash"]
+      }
+    } else if (qwenApiKey) {
+      // Select appropriate Qwen model based on agent type
+      switch (agentType) {
+        case "sales":
+          return qwenModels.plus
+        case "support":
+          return qwenModels.plus
+        case "planning":
+          return qwenModels.max
+        case "scaie":
+          return qwenModels.turbo
+        default:
+          return qwenModels.turbo
+      }
+    } else if (openaiApiKey) {
+      // Select appropriate OpenAI model based on agent type
+      // For now, we'll just use GPT-3.5 Turbo as default
+      return {
+        model: openaiModels["gpt-3.5-turbo"],
+        modelId: "gpt-3.5-turbo",
+        maxTokens: 4096,
+        costPerToken: 0.0002,
+        description: "Fast and efficient model for general tasks",
+      }
+    } else {
+      throw new Error("No AI service configured. Please set an API key for Gemini, Qwen, or OpenAI.")
+    }
   }
 
   private assessComplexity(messages: ChatMessage[]): number {
@@ -271,7 +287,8 @@ export class AgentManager {
   // Agent health check
   async healthCheck(): Promise<{ status: string; models: Record<string, boolean> }> {
     const modelStatus: Record<string, boolean> = {}
-
+    
+    // Check Qwen models
     for (const [name, model] of Object.entries(qwenModels)) {
       try {
         await generateText({
@@ -279,9 +296,26 @@ export class AgentManager {
           messages: [{ role: "user", content: "Hello" }],
           maxTokens: 10,
         })
-        modelStatus[name] = true
+        modelStatus[`qwen-${name}`] = true
       } catch {
-        modelStatus[name] = false
+        modelStatus[`qwen-${name}`] = false
+      }
+    }
+    
+    // Check OpenAI models if API key is configured
+    const isOpenAIConfigured = process.env.OPENAI_API_KEY && process.env.OPENAI_API_KEY.length > 0;
+    if (isOpenAIConfigured) {
+      for (const [name, model] of Object.entries(openaiModels)) {
+        try {
+          await generateText({
+            model,
+            messages: [{ role: "user", content: "Hello" }],
+            maxTokens: 10,
+          })
+          modelStatus[`openai-${name}`] = true
+        } catch {
+          modelStatus[`openai-${name}`] = false
+        }
       }
     }
 

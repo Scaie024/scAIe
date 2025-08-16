@@ -17,6 +17,7 @@ export const DATABASE_CONFIG = {
 export const AI_CONFIG = {
   models: {
     QWEN: "qwen-turbo",
+    GEMINI: "gemini-pro",
     FALLBACK: "gpt-3.5-turbo",
   },
   maxTokens: 2000,

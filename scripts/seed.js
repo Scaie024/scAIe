@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-const { createClient } = require("@supabase/supabase-js")
+const { Client } = require('pg');
 
 // Load environment variables
 require("dotenv").config()
@@ -99,22 +99,26 @@ async function seedDatabase() {
   log("🌱 Starting database seeding...", "blue")
 
   // Check environment variables
-  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
-  const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY
+  const postgresUrl = process.env.POSTGRES_URL
 
-  if (!supabaseUrl || !supabaseKey) {
-    log("❌ Missing Supabase configuration in .env file", "red")
+  if (!postgresUrl) {
+    log("❌ Missing PostgreSQL configuration in .env file", "red")
     process.exit(1)
   }
 
-  // Initialize Supabase client
-  const supabase = createClient(supabaseUrl, supabaseKey)
+  // Initialize PostgreSQL client
+  const client = new Client({
+    connectionString: postgresUrl,
+  })
 
   try {
-    // Check if data already exists
-    const { data: existingContacts } = await supabase.from("contacts").select("id").limit(1)
+    await client.connect()
+    log("✅ Connected to database", "green")
 
-    if (existingContacts && existingContacts.length > 0) {
+    // Check if data already exists
+    const contactsRes = await client.query('SELECT id FROM contacts LIMIT 1')
+    
+    if (contactsRes.rows.length > 0) {
       log("⚠️  Database already contains data", "yellow")
       const readline = require("readline")
       const rl = readline.createInterface({
@@ -122,40 +126,51 @@ async function seedDatabase() {
         output: process.stdout,
       })
 
-      const answer = await new Promise((resolve) => {
-        rl.question("Do you want to add sample data anyway? (y/N): ", resolve)
+      rl.question("Do you want to clear existing data and re-seed? (y/N): ", async (answer) => {
+        if (answer.toLowerCase() === 'y') {
+          log("🗑️  Clearing existing data...", "yellow")
+          await client.query('DELETE FROM agent_logs')
+          await client.query('DELETE FROM contacts')
+          rl.close()
+          await insertData(client)
+        } else {
+          log("⏭️  Skipping data seeding", "yellow")
+          rl.close()
+          await client.end()
+          process.exit(0)
+        }
       })
-      rl.close()
-
-      if (answer.toLowerCase() !== "y") {
-        log("Seeding cancelled", "yellow")
-        return
-      }
+    } else {
+      await insertData(client)
     }
 
-    // Seed contacts
     log("📇 Seeding contacts...", "cyan")
-    const { data: contacts, error: contactsError } = await supabase.from("contacts").insert(sampleContacts).select()
-
-    if (contactsError) {
-      throw contactsError
+    
+    // Insert contacts
+    for (const contact of sampleContacts) {
+      await client.query(
+        `INSERT INTO contacts (name, email, phone, company, status, notes, created_at, updated_at) 
+         VALUES ($1, $2, $3, $4, $5, $6, NOW(), NOW())`,
+        [contact.name, contact.email, contact.phone, contact.company, contact.status, contact.notes || '']
+      )
     }
+    log(`✅ Inserted ${sampleContacts.length} contacts`, "green")
 
-    log(`✅ Inserted ${contacts.length} contacts`, "green")
-
-    // Seed agent logs
-    log("📊 Seeding agent logs...", "cyan")
-    const { data: logs, error: logsError } = await supabase.from("agent_logs").insert(sampleAgentLogs).select()
-
-    if (logsError) {
-      throw logsError
+    log("🤖 Seeding agent logs...", "cyan")
+    
+    // Insert agent logs
+    for (const log of sampleAgentLogs) {
+      await client.query(
+        `INSERT INTO agent_logs (agent_type, action, input_data, output_data, success, response_time_ms, channel, created_at) 
+         VALUES ($1, $2, $3, $4, $5, $6, $7, NOW())`,
+        [log.agent_type, log.action, log.metadata || {}, log.metadata || {}, log.success, Math.floor(Math.random() * 1000), log.channel]
+      )
     }
+    log(`✅ Inserted ${sampleAgentLogs.length} agent logs`, "green")
 
-    log(`✅ Inserted ${logs.length} agent logs`, "green")
-
-    // Generate additional historical data
-    log("📈 Generating historical data...", "cyan")
-    await generateHistoricalData(supabase)
+    await client.end()
+    log("🎉 Database seeding completed successfully!", "green")
+    process.exit(0)
 
     log("✅ Database seeding completed successfully!", "green")
     log("\n📋 Summary:", "blue")
@@ -169,65 +184,6 @@ async function seedDatabase() {
   }
 }
 
-async function generateHistoricalData(supabase) {
-  const historicalLogs = []
-  const agentTypes = ["sales", "support", "analytics", "planning"]
-  const channels = ["email", "web_chat", "phone", "whatsapp", "slack"]
-  const actions = [
-    "lead_qualification",
-    "follow_up_call",
-    "issue_resolution",
-    "report_generation",
-    "process_optimization",
-    "customer_onboarding",
-    "data_analysis",
-    "strategy_planning",
-  ]
-
-  // Generate data for the last 30 days
-  for (let i = 0; i < 30; i++) {
-    const date = new Date()
-    date.setDate(date.getDate() - i)
-
-    // Generate 3-8 logs per day
-    const logsPerDay = Math.floor(Math.random() * 6) + 3
-
-    for (let j = 0; j < logsPerDay; j++) {
-      const logDate = new Date(date)
-      logDate.setHours(
-        Math.floor(Math.random() * 16) + 8, // 8 AM to 11 PM
-        Math.floor(Math.random() * 60),
-        Math.floor(Math.random() * 60),
-      )
-
-      historicalLogs.push({
-        agent_type: agentTypes[Math.floor(Math.random() * agentTypes.length)],
-        action: actions[Math.floor(Math.random() * actions.length)],
-        channel: channels[Math.floor(Math.random() * channels.length)],
-        success: Math.random() > 0.2, // 80% success rate
-        metadata: {
-          generated: true,
-          score: Math.floor(Math.random() * 100),
-          duration: Math.floor(Math.random() * 300) + 30,
-        },
-        created_at: logDate.toISOString(),
-      })
-    }
-  }
-
-  // Insert historical data in batches
-  const batchSize = 50
-  for (let i = 0; i < historicalLogs.length; i += batchSize) {
-    const batch = historicalLogs.slice(i, i + batchSize)
-    const { error } = await supabase.from("agent_logs").insert(batch)
-
-    if (error) {
-      throw error
-    }
-  }
-
-  log(`✅ Generated ${historicalLogs.length} historical log entries`, "green")
-}
 
 async function main() {
   try {
@@ -239,7 +195,5 @@ async function main() {
 }
 
 if (require.main === module) {
-  main()
+  seedDatabase().catch(console.error)
 }
-
-module.exports = { seedDatabase }
