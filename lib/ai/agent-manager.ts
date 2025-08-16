@@ -3,6 +3,7 @@ import { qwenModels } from "@/lib/qwen-client"
 import { createClient } from "@/lib/supabase/client"
 import type { ChatMessage, AgentLog } from "@/types"
 import { AI_CONFIG } from "@/config/constants"
+import { agentOrchestrator } from "@/lib/ai/agent-orchestrator"
 
 export interface AgentContext {
   userId?: string
@@ -51,6 +52,16 @@ export class AgentManager {
     Your expertise includes: data interpretation, trend analysis, performance forecasting, and actionable insights.
     Help users understand their business metrics and make data-driven decisions.
     Always provide specific recommendations based on data patterns.`,
+    
+    scaie: `You are Rocío García, a professional business development specialist at SCAIE (www.scaie.com.mx).
+    Your role is to engage with potential customers who are interested in SCAIE's services.
+    When someone expresses interest in SCAIE, provide them with the phone number 5535913417 to request a quote.
+    Be professional, friendly, and helpful. You represent a real company with real services.
+    Always ensure interested parties know how to contact SCAIE for pricing information.
+    Keep your responses natural and conversational, like a real person would speak.
+    When appropriate, mention that they can call 5535913417 for a personalized quote.
+    Do not use excessive emojis or informal language. Speak professionally but naturally.`,
+
   }
 
   async processMessage(
@@ -76,6 +87,11 @@ export class AgentManager {
 
       // Select appropriate model based on complexity
       const model = this.selectModel(messages, context)
+      
+      // Validate model selection
+      if (!model) {
+        throw new Error('Failed to select appropriate model')
+      }
 
       if (streaming) {
         const result = await this.streamWithRetry(allMessages, model, context)
@@ -134,38 +150,29 @@ export class AgentManager {
     const basePrompt = this.systemPrompts[agentType as keyof typeof this.systemPrompts] || this.systemPrompts.general
 
     // Add context-specific information
-    let contextPrompt = basePrompt
-
-    if (context.metadata?.contactCount) {
-      contextPrompt += `\n\nCurrent CRM context: You have access to ${context.metadata.contactCount} contacts in the system.`
-    }
-
-    if (context.metadata?.recentActivity) {
-      contextPrompt += `\n\nRecent activity: ${context.metadata.recentActivity}`
-    }
-
-    return contextPrompt
+    const contextInfo = context.metadata ? `\n\nContext: ${JSON.stringify(context.metadata)}` : ""
+    return basePrompt + contextInfo
   }
 
-  private prepareMessages(messages: ChatMessage[], context: AgentContext): any[] {
-    return messages.map((msg) => ({
+  private prepareMessages(messages: ChatMessage[], context: AgentContext): ChatMessage[] {
+    // Filter out system messages and limit conversation history
+    const filteredMessages = messages.filter((msg) => msg.role !== "system")
+    const recentMessages = filteredMessages.slice(-10) // Keep last 10 messages
+
+    return recentMessages.map((msg) => ({
       role: msg.role,
       content: msg.content,
     }))
   }
 
   private selectModel(messages: ChatMessage[], context: AgentContext) {
-    const totalLength = messages.reduce((sum, msg) => sum + msg.content.length, 0)
-    const complexity = this.assessComplexity(messages)
+    // Use the model specified in the agent config if available
+    const agentConfig = Array.from(agentOrchestrator.getActiveAgentsSync?.() || []).find(
+      (agent) => agent.type === context.agentType
+    )
 
-    // Use more powerful model for complex queries
-    if (complexity > 0.7 || totalLength > 2000) {
-      return qwenModels.max
-    } else if (complexity > 0.4 || totalLength > 1000) {
-      return qwenModels.plus
-    } else {
-      return qwenModels.turbo
-    }
+    const modelId = agentConfig?.model || "qwen-plus"
+    return qwenModels[modelId] || qwenModels["qwen-plus"]
   }
 
   private assessComplexity(messages: ChatMessage[]): number {

@@ -7,7 +7,7 @@ A modern, AI-powered Customer Relationship Management (CRM) admin interface buil
 ### Core CRM Functionality
 - **Contact Management**: Full CRUD operations with real-time updates
 - **Advanced Analytics**: Interactive dashboards with charts and metrics
-- **Multi-Agent AI System**: Specialized AI agents for sales, support, and analytics
+- **Multi-Agent AI System**: Specialized AI agents for sales, support, analytics, and custom business agents
 - **Real-time Data**: Live updates using Supabase subscriptions
 - **Responsive Design**: Optimized for desktop, tablet, and mobile
 
@@ -17,6 +17,7 @@ A modern, AI-powered Customer Relationship Management (CRM) admin interface buil
 - **Context Awareness**: Maintains conversation history and business context
 - **Error Recovery**: Automatic retries and fallback mechanisms
 - **Performance Monitoring**: Real-time health checks and logging
+- **Human-like Interactions**: Natural, conversational responses without excessive emojis or informal language
 
 ### Technical Features
 - **Docker Support**: Complete containerization for easy deployment
@@ -37,25 +38,25 @@ A modern, AI-powered Customer Relationship Management (CRM) admin interface buil
 ### Option 1: Docker Deployment (Recommended)
 
 1. **Clone the repository**
-   \`\`\`bash
+   ```bash
    git clone <repository-url>
    cd crm-admin-system
-   \`\`\`
+   ```
 
 2. **Configure environment variables**
-   \`\`\`bash
+   ```bash
    cp .env.example .env
    # Edit .env with your configuration
-   \`\`\`
+   ```
 
 3. **Start with Docker Compose**
-   \`\`\`bash
+   ```bash
    # Development
    docker-compose -f docker-compose.dev.yml up --build
 
    # Production
    docker-compose up --build -d
-   \`\`\`
+   ```
 
 4. **Access the application**
    - Development: http://localhost:3000
@@ -64,26 +65,26 @@ A modern, AI-powered Customer Relationship Management (CRM) admin interface buil
 ### Option 2: Local Development
 
 1. **Install dependencies**
-   \`\`\`bash
+   ```bash
    npm install
-   \`\`\`
+   ```
 
 2. **Configure environment**
-   \`\`\`bash
+   ```bash
    cp .env.example .env
    # Edit .env with your Supabase and API keys
-   \`\`\`
+   ```
 
 3. **Run database setup**
-   \`\`\`bash
+   ```bash
    npm run db:migrate
    npm run db:seed
-   \`\`\`
+   ```
 
 4. **Start development server**
-   \`\`\`bash
+   ```bash
    npm run dev
-   \`\`\`
+   ```
 
 ## 🔧 Configuration
 
@@ -91,7 +92,7 @@ A modern, AI-powered Customer Relationship Management (CRM) admin interface buil
 
 Create a `.env` file with the following variables:
 
-\`\`\`env
+```env
 # Supabase Configuration
 NEXT_PUBLIC_SUPABASE_URL=your_supabase_project_url
 NEXT_PUBLIC_SUPABASE_ANON_KEY=your_supabase_anon_key
@@ -106,7 +107,7 @@ POSTGRES_URL=postgresql://postgres:postgres@localhost:5432/crm_db
 # Application
 NODE_ENV=development
 NEXT_TELEMETRY_DISABLED=1
-\`\`\`
+```
 
 ### Supabase Setup
 
@@ -149,11 +150,12 @@ The system supports multiple Qwen models:
 - Specialized agents for different tasks
 - Automatic agent handoffs
 - Context-aware conversations
+- **SCAIE Agent**: Specialized agent for handling inquiries about www.scaie.com.mx
 
 ## 🏗️ Architecture
 
 ### Project Structure
-\`\`\`
+```
 crm-admin-system/
 ├── app/                    # Next.js app directory
 │   ├── api/               # API routes
@@ -173,7 +175,7 @@ crm-admin-system/
 ├── hooks/                # Custom React hooks
 ├── scripts/              # Database scripts
 └── docs/                 # Documentation
-\`\`\`
+```
 
 ### AI Agent System
 
@@ -181,8 +183,15 @@ The system uses a sophisticated multi-agent architecture:
 
 1. **Agent Manager**: Handles message processing, retries, and model selection
 2. **Agent Orchestrator**: Routes messages and manages agent handoffs
-3. **Specialized Agents**: Sales, Support, Analytics, and Planning agents
+3. **Specialized Agents**: Sales, Support, Analytics, Planning, and custom business agents
 4. **Context Management**: Maintains conversation history and business context
+
+#### SCAIE Agent (New in v6.0)
+A specialized agent designed to handle inquiries about SCAIE services (www.scaie.com.mx). Features include:
+- Natural, human-like responses without excessive emojis or informal language
+- Direct routing for SCAIE-related keywords
+- Consistent provision of contact information (5535913417) for quote requests
+- Professional business development specialist persona (Rocío García)
 
 ### Database Schema
 
@@ -195,14 +204,14 @@ The system uses a sophisticated multi-agent architecture:
 ### Docker Production Deployment
 
 1. **Build production image**
-   \`\`\`bash
+   ```bash
    docker build -t crm-admin .
-   \`\`\`
+   ```
 
 2. **Deploy with Docker Compose**
-   \`\`\`bash
+   ```bash
    docker-compose --profile production up -d
-   \`\`\`
+   ```
 
 3. **Configure Nginx** (included in docker-compose.yml)
    - SSL termination
@@ -212,14 +221,14 @@ The system uses a sophisticated multi-agent architecture:
 ### Manual Deployment
 
 1. **Build the application**
-   \`\`\`bash
+   ```bash
    npm run build
-   \`\`\`
+   ```
 
 2. **Start production server**
-   \`\`\`bash
+   ```bash
    npm start
-   \`\`\`
+   ```
 
 ### Environment-Specific Configurations
 
@@ -230,7 +239,7 @@ The system uses a sophisticated multi-agent architecture:
 ## 🔍 API Reference
 
 ### Chat API
-\`\`\`
+```
 POST /api/chat
 Content-Type: application/json
 
@@ -245,11 +254,11 @@ Content-Type: application/json
   "sessionId": "unique-session-id",
   "metadata": {}
 }
-\`\`\`
+```
 
 ### Health Check
-\`\`\`
-GET /api/chat
+```
+GET /api/health
 Response: {
   "status": "healthy",
   "models": {
@@ -257,9 +266,9 @@ Response: {
     "plus": true,
     "max": true
   },
-  "activeAgents": 3
+  "activeAgents": 4
 }
-\`\`\`
+```
 
 ## 🛠️ Development
 
@@ -282,7 +291,7 @@ Response: {
 
 ### Testing
 
-\`\`\`bash
+```bash
 # Run tests
 npm test
 
@@ -291,7 +300,7 @@ npm run test:watch
 
 # Generate coverage report
 npm run test:coverage
-\`\`\`
+```
 
 ## 🐛 Troubleshooting
 
@@ -299,13 +308,14 @@ npm run test:coverage
 
 1. **Database Connection Issues**
    - Verify Supabase credentials in `.env`
+   - Verify Supabase credentials in `.env`
    - Check network connectivity
    - Ensure RLS policies are configured
 
 2. **AI Agent Not Responding**
    - Verify Qwen API key
    - Check API rate limits
-   - Review agent health status at `/api/chat`
+   - Review agent health status at `/api/health`
 
 3. **Docker Issues**
    - Ensure Docker daemon is running
@@ -315,10 +325,10 @@ npm run test:coverage
 ### Debug Mode
 
 Enable debug logging:
-\`\`\`env
+```env
 NODE_ENV=development
 DEBUG=crm:*
-\`\`\`
+```
 
 ### Performance Optimization
 
@@ -326,6 +336,25 @@ DEBUG=crm:*
 - Enable Nginx gzip compression
 - Optimize database queries with indexes
 - Monitor agent response times
+
+## 🔄 Version 6.0 Updates
+
+### Major Features
+- **SCAIE Agent**: New specialized agent for handling inquiries about www.scaie.com.mx
+- **Enhanced Agent Personality**: Agents now have more human-like personalities without excessive emojis
+- **Improved Routing**: Better intent analysis and agent routing logic
+- **Direct Qwen Integration**: Agents now use Qwen LLM directly without fallbacks
+
+### Technical Improvements
+- **Agent Manager Refactor**: Improved model selection and context handling
+- **Orchestrator Enhancements**: Better synchronous agent access methods
+- **Chat Preview Improvements**: More realistic agent interactions in sandbox
+- **Dependency Updates**: Updated to latest versions of core libraries
+
+### UI/UX Enhancements
+- **Agent Type Indicators**: Visual indicators showing which agent is responding
+- **Contact Information Highlighting**: Special display for phone numbers and contact info
+- **Test Functionality**: Easy testing of SCAIE agent with dedicated button
 
 ## 🤝 Contributing
 

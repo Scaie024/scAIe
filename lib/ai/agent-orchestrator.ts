@@ -46,6 +46,15 @@ export class AgentOrchestrator {
         capabilities: ["data_analysis", "trend_forecasting", "process_optimization"],
         model: "qwen-max",
       },
+      {
+        id: "scaie-001",
+        name: "SCAIE Specialist",
+        type: "scaie",
+        description: "Handles inquiries for SCAIE services and quote requests",
+        active: true,
+        capabilities: ["lead_generation", "quote_requests", "customer_engagement"],
+        model: "qwen-turbo",
+      },
     ]
 
     defaultAgents.forEach((agent) => {
@@ -106,23 +115,29 @@ export class AgentOrchestrator {
   }> {
     const patterns = {
       sales: {
-        keywords: ["lead", "prospect", "quote", "price", "buy", "purchase", "deal", "close"],
+        keywords: ["lead", "prospect", "quote", "price", "buy", "purchase", "deal", "close", "cost"],
         urgency: "medium",
       },
       support: {
-        keywords: ["problem", "issue", "error", "help", "broken", "not working", "urgent"],
+        keywords: ["problem", "issue", "error", "help", "broken", "not working", "urgent", "bug", "fix"],
         urgency: "high",
       },
       analytics: {
-        keywords: ["report", "data", "analysis", "metrics", "dashboard", "trend", "performance"],
+        keywords: ["report", "data", "analysis", "metrics", "dashboard", "trend", "performance", "statistics"],
         urgency: "low",
+      },
+      scaie: {
+        keywords: ["scaie", "www.scaie.com.mx", "quote", "pricing", "services", "company", "information", "5535913417"],
+        urgency: "medium",
       },
     }
 
     let bestMatch = { category: "general", confidence: 0, urgency: "low", keywords: [] as string[] }
 
     for (const [category, config] of Object.entries(patterns)) {
-      const matches = config.keywords.filter((keyword) => message.toLowerCase().includes(keyword))
+      const matches = config.keywords.filter((keyword) => 
+        message.toLowerCase().includes(keyword.toLowerCase())
+      )
 
       const confidence = matches.length / config.keywords.length
 
@@ -134,6 +149,20 @@ export class AgentOrchestrator {
           keywords: matches,
         }
       }
+    }
+
+    // Special case for SCAIE - even low confidence should route to SCAIE agent if relevant
+    const isScaieRelated = message.toLowerCase().includes('scaie') || 
+                          message.toLowerCase().includes('5535913417') ||
+                          message.toLowerCase().includes('www.scaie.com.mx');
+    
+    if (isScaieRelated && bestMatch.category !== "scaie") {
+      bestMatch = {
+        category: "scaie",
+        confidence: 0.6, // Set a moderate confidence
+        urgency: "medium",
+        keywords: ["scaie"],
+      };
     }
 
     return bestMatch
@@ -184,6 +213,10 @@ export class AgentOrchestrator {
   }
 
   async getActiveAgents(): Promise<AgentConfig[]> {
+    return Array.from(this.activeAgents.values()).filter((agent) => agent.active)
+  }
+  
+  getActiveAgentsSync(): AgentConfig[] {
     return Array.from(this.activeAgents.values()).filter((agent) => agent.active)
   }
 

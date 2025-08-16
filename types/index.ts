@@ -11,7 +11,7 @@ export interface Contact {
 
 export interface AgentLog {
   id: string
-  agent_type: "sales" | "support" | "planning" | "general"
+  agent_type: "sales" | "support" | "planning" | "general" | "scaie"
   action: string
   channel?: "whatsapp" | "telegram" | "email" | "slack" | "web"
   success: boolean
@@ -34,7 +34,7 @@ export interface ChatMessage {
 export interface AgentConfig {
   id: string
   name: string
-  type: "sales" | "support" | "planning" | "orchestrator"
+  type: "sales" | "support" | "planning" | "orchestrator" | "scaie"
   description: string
   active: boolean
   capabilities: string[]

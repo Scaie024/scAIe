@@ -1,267 +1,219 @@
 "use client"
 
-import { useState } from "react"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { useState, useRef, useEffect } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { Badge } from "@/components/ui/badge"
-import { Send, Star, Bot, AlertCircle } from "lucide-react"
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { Bot, Send, User, Phone } from "lucide-react"
+import type { ChatMessage } from "@/types"
+import { agentManager, type AgentContext } from "@/lib/ai/agent-manager"
+import { agentOrchestrator } from "@/lib/ai/agent-orchestrator"
 
 export function ChatPreview() {
-  const [message, setMessage] = useState("")
-  const [isLoading, setIsLoading] = useState(false)
-  const [error, setError] = useState<string | null>(null)
-  const [messages, setMessages] = useState([
+  const [messages, setMessages] = useState<ChatMessage[]>([
     {
-      id: 1,
-      type: "user",
-      content: "Hi, I'm interested in your CRM solution",
-      timestamp: "10:30 AM",
-    },
-    {
-      id: 2,
-      type: "agent",
-      content:
-        "Hello! I'd be happy to help you learn about our CRM. Could you share your name and email so I can provide personalized information?",
-      timestamp: "10:30 AM",
-      agent: "Sales Agent",
-      action: "Lead qualification initiated",
-    },
-    {
-      id: 3,
-      type: "user",
-      content: "Sure, I'm John Smith from TechCorp. My email is john@techcorp.com",
-      timestamp: "10:31 AM",
-    },
-    {
-      id: 4,
-      type: "agent",
-      content:
-        "Thank you John! I've registered you in our system. Based on TechCorp's size, I think our Enterprise plan would be perfect. Would you like to schedule a demo?",
-      timestamp: "10:31 AM",
-      agent: "Sales Agent",
-      action: "Contact created in database",
-    },
-    {
-      id: 5,
-      type: "handoff",
-      content: "Task handed off to Support Agent for technical questions",
-      timestamp: "10:32 AM",
-      from: "Sales Agent",
-      to: "Support Agent",
+      id: "1",
+      role: "assistant",
+      content: "Hello! I'm your CRM assistant. How can I help you today?",
+      timestamp: new Date(),
     },
   ])
+  const [input, setInput] = useState("")
+  const [isLoading, setIsLoading] = useState(false)
+  const messagesEndRef = useRef<null | HTMLDivElement>(null)
+  const sessionId = useRef<string>(`session_${Date.now()}`)
 
-  const handleSendMessage = async () => {
-    if (!message.trim() || isLoading) return
+  const scrollToBottom = () => {
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" })
+  }
 
-    const newMessage = {
-      id: messages.length + 1,
-      type: "user" as const,
-      content: message,
-      timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+  useEffect(() => {
+    scrollToBottom()
+  }, [messages])
+
+  const handleSend = async () => {
+    if (!input.trim() || isLoading) return
+
+    // Add user message
+    const userMessage: ChatMessage = {
+      id: Date.now().toString(),
+      role: "user",
+      content: input,
+      timestamp: new Date(),
     }
 
-    setMessages((prev) => [...prev, newMessage])
-    setMessage("")
+    setMessages((prev) => [...prev, userMessage])
+    setInput("")
     setIsLoading(true)
-    setError(null)
 
     try {
-      console.log("[v0] Sending message to chat API")
-
-      const response = await fetch("/api/chat", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          messages: [{ role: "user", content: newMessage.content }],
-          agentType: "general",
-        }),
-      })
-
-      console.log("[v0] API response status:", response.status)
-
-      if (!response.ok) {
-        const errorText = await response.text()
-        console.error("[v0] API error response:", errorText)
-        throw new Error(errorText || `HTTP ${response.status}`)
+      // Create context for the agent
+      const context: AgentContext = {
+        sessionId: sessionId.current,
+        agentType: "general",
+        conversationHistory: [...messages, userMessage],
       }
 
-      const reader = response.body?.getReader()
-      const decoder = new TextDecoder()
-      let aiResponse = ""
+      // Let the orchestrator decide which agent to use
+      const routing = await agentOrchestrator.routeMessage(
+        [...messages, userMessage],
+        "general",
+        sessionId.current
+      )
 
-      if (reader) {
-        console.log("[v0] Starting to read stream")
-        while (true) {
-          const { done, value } = await reader.read()
-          if (done) {
-            console.log("[v0] Stream reading completed")
-            break
-          }
+      if (routing.shouldHandoff) {
+        // Extract agent type from agent ID (e.g., "scaie-001" -> "scaie")
+        const agentType = routing.agentId.split('-')[0];
+        context.agentType = agentType;
+      }
 
-          const chunk = decoder.decode(value, { stream: true })
-          const lines = chunk.split("\n")
+      // Process message with the agent manager
+      const result = await agentManager.processMessage(
+        [...messages, userMessage],
+        context,
+        false
+      ) as any
 
-          for (const line of lines) {
-            if (line.startsWith("0:")) {
-              try {
-                const data = JSON.parse(line.slice(2))
-                if (data.content) {
-                  aiResponse += data.content
-                }
-              } catch (parseError) {
-                console.warn("[v0] Failed to parse stream line:", line)
-              }
-            }
-          }
+      let response = "";
+      
+      if (result && result.content) {
+        response = result.content
+      } else {
+        // Fallback response if something goes wrong
+        response = "Thank you for your inquiry. For specific information about SCAIE services, please contact us at 5535913417."
+      }
+
+      // Add assistant message
+      const assistantMessage: ChatMessage = {
+        id: (Date.now() + 1).toString(),
+        role: "assistant",
+        content: response,
+        timestamp: new Date(),
+        metadata: {
+          agent_type: context.agentType,
         }
       }
 
-      console.log("[v0] Final AI response:", aiResponse)
-
-      const agentResponse = {
-        id: messages.length + 2,
-        type: "agent" as const,
-        content: aiResponse || "I understand your question. Let me help you with that.",
-        timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
-        agent: "Qwen AI Agent",
-        action: "Processed with Qwen AI",
+      setMessages((prev) => [...prev, assistantMessage])
+    } catch (error) {
+      console.error("Chat error:", error)
+      const errorMessage: ChatMessage = {
+        id: (Date.now() + 1).toString(),
+        role: "assistant",
+        content: "Sorry, I'm having trouble processing your request. Please try again.",
+        timestamp: new Date(),
       }
-
-      setMessages((prev) => [...prev, agentResponse])
-    } catch (error: any) {
-      console.error("[v0] Chat error:", error)
-      setError(error.message || "Failed to get response")
-
-      const errorResponse = {
-        id: messages.length + 2,
-        type: "agent" as const,
-        content: "I apologize, but I'm having trouble processing your request right now. Please try again.",
-        timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
-        agent: "System",
-        action: "Error occurred",
-      }
-      setMessages((prev) => [...prev, errorResponse])
+      setMessages((prev) => [...prev, errorMessage])
     } finally {
       setIsLoading(false)
     }
   }
 
+  const handleKeyPress = (e: React.KeyboardEvent) => {
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault()
+      handleSend()
+    }
+  }
+
+  // Add a test function to simulate SCAIE-related query
+  const testScaieQuery = () => {
+    setInput("I'm interested in SCAIE services, how can I get a quote?")
+  }
+
   return (
-    <Card className="bg-stone-200 border-gray-500 h-fit">
+    <Card className="bg-stone-200 border-gray-500">
       <CardHeader>
         <CardTitle className="text-gray-900 flex items-center gap-2">
           <Bot className="h-5 w-5" />
-          Qwen AI Chat Preview
+          Chat Preview
         </CardTitle>
         <CardDescription className="text-gray-600">
-          Test Qwen AI integration and multi-agent interactions
+          Test the multi-agent conversation system
         </CardDescription>
-        {error && (
-          <div className="flex items-center gap-2 text-red-600 text-sm bg-red-50 p-2 rounded">
-            <AlertCircle className="h-4 w-4" />
-            {error}
-          </div>
-        )}
+        <Button onClick={testScaieQuery} size="sm" className="w-fit">
+          Test SCAIE Query
+        </Button>
       </CardHeader>
       <CardContent className="space-y-4">
-        {/* Chat Messages */}
-        <div className="bg-white border border-gray-300 rounded-lg p-4 h-96 overflow-y-auto space-y-3">
-          {messages.map((msg) => (
-            <div key={msg.id}>
-              {msg.type === "user" && (
-                <div className="flex justify-end">
-                  <div className="bg-gray-900 text-white rounded-lg p-3 max-w-xs">
-                    <p className="text-sm">{msg.content}</p>
-                    <p className="text-xs opacity-70 mt-1">{msg.timestamp}</p>
-                  </div>
+        <div className="space-y-4 h-80 overflow-y-auto p-4 bg-white rounded-lg border border-gray-300">
+          {messages.map((message) => (
+            <div
+              key={message.id}
+              className={`flex ${message.role === "user" ? "justify-end" : "justify-start"}`}
+            >
+              <div
+                className={`flex gap-2 max-w-[80%] ${message.role === "user" ? "flex-row-reverse" : ""}`}
+              >
+                <div
+                  className={`w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 ${
+                    message.role === "user" ? "bg-gray-900" : "bg-stone-200 border border-gray-300"
+                  }`}
+                >
+                  {message.role === "user" ? (
+                    <User className="w-4 h-4 text-white" />
+                  ) : (
+                    <Bot className="w-4 h-4 text-gray-600" />
+                  )}
                 </div>
-              )}
-
-              {msg.type === "agent" && (
-                <div className="flex justify-start">
-                  <div className="bg-gray-100 rounded-lg p-3 max-w-xs">
-                    <div className="flex items-center gap-2 mb-1">
-                      <Badge variant="outline" className="text-xs">
-                        {msg.agent}
-                      </Badge>
+                <div
+                  className={`rounded-lg p-3 ${
+                    message.role === "user"
+                      ? "bg-gray-900 text-white"
+                      : "bg-stone-100 border border-gray-300 text-gray-900"
+                  }`}
+                >
+                  <p className="text-sm">{message.content}</p>
+                  {message.role === "assistant" && message.content.includes("5535913417") && (
+                    <div className="mt-2 p-2 bg-blue-50 border border-blue-200 rounded flex items-center gap-2">
+                      <Phone className="w-4 h-4 text-blue-600" />
+                      <span className="text-sm font-medium text-blue-800">Call 5535913417 for a quote</span>
                     </div>
-                    <p className="text-sm text-gray-900">{msg.content}</p>
-                    <p className="text-xs text-gray-600 mt-1">{msg.timestamp}</p>
-                    {msg.action && (
-                      <div className="mt-2 p-2 bg-blue-50 rounded text-xs text-blue-700">Action: {msg.action}</div>
-                    )}
-                  </div>
+                  )}
+                  {message.metadata?.agent_type && (
+                    <div className="mt-1 text-xs text-gray-500">
+                      Agent: {message.metadata.agent_type}
+                    </div>
+                  )}
                 </div>
-              )}
-
-              {msg.type === "handoff" && (
-                <div className="text-center">
-                  <div className="inline-flex items-center gap-2 bg-yellow-50 border border-yellow-200 rounded-lg px-3 py-2">
-                    <Badge variant="outline" className="text-xs">
-                      {msg.from}
-                    </Badge>
-                    <span className="text-xs">→</span>
-                    <Badge variant="outline" className="text-xs">
-                      {msg.to}
-                    </Badge>
-                  </div>
-                  <p className="text-xs text-gray-600 mt-1">{msg.content}</p>
-                </div>
-              )}
+              </div>
             </div>
           ))}
-
           {isLoading && (
             <div className="flex justify-start">
-              <div className="bg-gray-100 rounded-lg p-3 max-w-xs">
-                <div className="flex items-center gap-2 mb-1">
-                  <Badge variant="outline" className="text-xs">
-                    Qwen AI Agent
-                  </Badge>
+              <div className="flex gap-2">
+                <div className="w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 bg-stone-200 border border-gray-300">
+                  <Bot className="w-4 h-4 text-gray-600" />
                 </div>
-                <div className="flex items-center gap-2">
-                  <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-gray-900"></div>
-                  <p className="text-sm text-gray-600">Thinking...</p>
+                <div className="bg-stone-100 border border-gray-300 rounded-lg p-3">
+                  <div className="flex space-x-1">
+                    <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce"></div>
+                    <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: "0.2s" }}></div>
+                    <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: "0.4s" }}></div>
+                  </div>
                 </div>
               </div>
             </div>
           )}
+          <div ref={messagesEndRef} />
         </div>
 
-        {/* Chat Input */}
         <div className="flex gap-2">
           <Input
-            placeholder="Test message with Qwen AI..."
-            value={message}
-            onChange={(e) => setMessage(e.target.value)}
-            onKeyPress={(e) => e.key === "Enter" && !isLoading && handleSendMessage()}
-            className="flex-1 bg-white border-gray-300"
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            onKeyDown={handleKeyPress}
+            placeholder="Type your message..."
+            className="bg-white border-gray-300"
             disabled={isLoading}
           />
-          <Button onClick={handleSendMessage} className="bg-gray-900 hover:bg-gray-800 text-white" disabled={isLoading}>
-            <Send className="h-4 w-4" />
+          <Button
+            onClick={handleSend}
+            className="bg-gray-900 hover:bg-gray-800 text-white"
+            disabled={isLoading || !input.trim()}
+          >
+            <Send className="w-4 h-4" />
           </Button>
-        </div>
-
-        {/* Feedback */}
-        <div className="space-y-2">
-          <p className="text-xs text-gray-600">Rate this interaction:</p>
-          <div className="flex gap-1">
-            {[1, 2, 3, 4, 5].map((rating) => (
-              <Button
-                key={rating}
-                size="sm"
-                variant="outline"
-                className="w-8 h-8 p-0 bg-white border-gray-300 hover:bg-yellow-50"
-              >
-                <Star className="h-3 w-3" />
-              </Button>
-            ))}
-          </div>
         </div>
       </CardContent>
     </Card>

@@ -8,14 +8,14 @@ import { OrchestratorModule } from "@/components/sandbox/orchestrator-module"
 import { ChatPreview } from "@/components/sandbox/chat-preview"
 
 export default async function Sandbox() {
-  // If Supabase is not configured, show setup message
-  if (!isSupabaseConfigured) {
-    return (
-      <div className="flex min-h-screen items-center justify-center bg-stone-100">
-        <h1 className="text-2xl font-bold mb-4 text-gray-900">Connect Supabase to get started</h1>
-      </div>
-    )
-  }
+  // Temporarily bypass Supabase check for testing
+  // if (!isSupabaseConfigured) {
+  //   return (
+  //     <div className="flex min-h-screen items-center justify-center bg-stone-100">
+  //       <h1 className="text-2xl font-bold mb-4 text-gray-900">Connect Supabase to get started</h1>
+  //     </div>
+  //   )
+  // }
 
   return (
     <div className="p-6 space-y-6 bg-stone-100 min-h-screen">
@@ -51,23 +51,18 @@ export default async function Sandbox() {
                 Orchestrator
               </TabsTrigger>
             </TabsList>
-
             <TabsContent value="perception">
               <PerceptionModule />
             </TabsContent>
-
             <TabsContent value="planning">
               <PlanningModule />
             </TabsContent>
-
             <TabsContent value="action">
               <ActionModule />
             </TabsContent>
-
             <TabsContent value="memory">
               <MemoryModule />
             </TabsContent>
-
             <TabsContent value="orchestrator">
               <OrchestratorModule />
             </TabsContent>

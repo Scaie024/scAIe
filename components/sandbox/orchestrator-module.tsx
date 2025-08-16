@@ -26,6 +26,13 @@ export function OrchestratorModule() {
       tasks: ["Answer queries", "Resolve issues", "Escalate complex cases"],
     },
     {
+      id: "scaie-agent",
+      name: "SCAIE Specialist",
+      description: "Handles SCAIE inquiries and quote requests",
+      status: "active",
+      tasks: ["Process quote requests", "Provide company information", "Direct to phone contact"],
+    },
+    {
       id: "planning-agent",
       name: "Planning Agent",
       description: "Task coordination and workflow management",

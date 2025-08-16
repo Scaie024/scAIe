@@ -48,6 +48,7 @@ export const AGENT_TYPES = [
   { id: "support", name: "Support Agent", icon: "HeadphonesIcon" },
   { id: "planning", name: "Planning Agent", icon: "Calendar" },
   { id: "orchestrator", name: "Orchestrator", icon: "Settings" },
+  { id: "scaie", name: "SCAIE Specialist", icon: "Briefcase" },
 ] as const
 
 export const CONTACT_STATUSES = [
