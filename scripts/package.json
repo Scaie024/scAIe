@@ -1,0 +1,15 @@
+{
+  "name": "crm-admin-scripts",
+  "version": "1.0.0",
+  "description": "Setup and maintenance scripts for CRM Admin System",
+  "scripts": {
+    "setup": "node setup.js",
+    "migrate": "node migrate.js",
+    "seed": "node seed.js",
+    "health": "node health-check.js"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.45.4",
+    "dotenv": "^16.3.1"
+  }
+}
